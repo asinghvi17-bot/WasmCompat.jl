@@ -93,6 +93,10 @@ connect!(XC2, XC)                                           # a closure listener
 const OF = on(v -> push!(BUF3, -v), X3)                     # removed at run time
 const DYN = Ref{Observable{Float64}}(Observable(0.0))
 const XU = Observable(0.0)
+const CS = Observable{Any}(Consume(false))                  # a copy's listener returns the value: a Consume stops
+const CSC = copy(CS)
+const CSCALLS = Ref(0)
+on(_ -> (CSCALLS[] += 1; nothing), CS)
 function run(out)
     X3[] = 0.5
     out("p3: xc2 = $(XC2[]), listeners = $(length(X3.listeners))\n")
@@ -107,6 +111,8 @@ function run(out)
     on(scaler(10.0), X3)                                    # declared (prepare)
     X3[] = 3.5
     out("p3: xc2 = $(XC2[]), buf3 = $(join(BUF3, ", "))\n")
+    CS[] = Consume(true)
+    out("p3: a copy of a Consume: notify = $(notify(CS)), later listener calls = $(CSCALLS[])\n")
     # (not declared: the closed world refuses it in Wasm, see expected/observables.diff)
     added = try
         on(v -> nothing, XU)

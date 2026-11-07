@@ -48,10 +48,12 @@ struct Record
     mapcallbacks::Vector{Any}          # Tuple{typeof(f), typeof(result), typeof(args)} of a MapCallback
     onanys::Vector{Any}                # Tuple{typeof(f), typeof(args)} of an OnAny
     setindexes::Vector{Any}            # typeof(obs) of a SetindexCallback
+    setindex_from::Dict{Any,Vector{Any}}   # observable type => typeof(obs) of its SetindexCallbacks
 end
-Record() = Record(Dict{Any,Vector{Any}}(), Dict{Any,Vector{Any}}(), Any[], Any[], Any[])
+Record() = Record(Dict{Any,Vector{Any}}(), Dict{Any,Vector{Any}}(), Any[], Any[], Any[], Dict{Any,Vector{Any}}())
 
-# (the declarations of register_listener!/register_value!; values by (O, Nothing): for every listener of O)
+# (the declarations of register_listener!/register_value!, for every close_world! until open_world!; values by
+# (O, Nothing): for every listener of O)
 const DECLARED = Record()
 
 push_unique!(v::Vector{Any}, @nospecialize(x)) = (any(y -> y === x, v) || push!(v, x); nothing)
@@ -69,6 +71,7 @@ function record!(rec::Record, @nospecialize(f), @nospecialize(observable::Abstra
             push_unique!(rec.values, (O, typeof(f)), typeof(obs.val))
             push_unique!(rec.values, (O, Nothing), typeof(obs.val))
         end
+        f isa SetindexCallback && push_unique!(rec.setindex_from, O, typeof(f.obs))
     end
     f isa MapCallback && push_unique!(rec.mapcallbacks, Tuple{typeof(f.f),typeof(f.result),typeof(f.args)})
     f isa OnAny && push_unique!(rec.onanys, Tuple{typeof(f.f),typeof(f.args)})
@@ -171,7 +174,7 @@ cw_mapcallback_types(::Any) = Tuple{}
 cw_onany_types() = cw_onany_types(nothing)
 cw_onany_types(::Any) = Tuple{}
 cw_setindex_types() = cw_setindex_types(nothing)
-cw_setindex_types(::Any) = Tuple{}
+cw_setindex_types(::Any) = Tuple{}   # (and of an observable type: its SetindexCallbacks' observables)
 cw_addhandler_types() = cw_addhandler_types(nothing)
 cw_addhandler_types(::Any) = Tuple{}
 cw_removehandler_types() = cw_removehandler_types(nothing)
@@ -225,6 +228,9 @@ function WasmCompat.Observables.close_world!(roots...; exclude = ())
     push!(defs, :(cw_mapcallback_types(::Nothing) = $(tuple_type(rec.mapcallbacks))))
     push!(defs, :(cw_onany_types(::Nothing) = $(tuple_type(rec.onanys))))
     push!(defs, :(cw_setindex_types(::Nothing) = $(tuple_type(rec.setindexes))))
+    for (O, Ts) in rec.setindex_from
+        push!(defs, :(cw_setindex_types(::Type{$O}) = $(tuple_type(Ts))))
+    end
     hooks(v) = tuple_type(unique!(Any[typeof(g) for g in v]))
     push!(defs, :(cw_addhandler_types(::Nothing) = $(hooks(Observables.addhandler_callbacks))))
     push!(defs, :(cw_removehandler_types(::Nothing) = $(hooks(Observables.removehandler_callbacks))))
@@ -273,8 +279,10 @@ notify_any(@nospecialize(obs))::Bool = dispatch_notify(obs, cw_observable_types(
     return ex
 end
 
-# (an observable of a type with no listener in the closed world: nothing to call, unless it has one; an
-# `AbstractObservable` of another type is not in the closed world)
+# (an observable of a type with no listener in the closed world: nothing to call, unless it has one. Another
+# `AbstractObservable` throws: its listeners are those of `observe(obs)`, a dynamic call for a type not known
+# here, and recording listener-less types of Observables' other subtypes, `ObservablePair` and `Flatten`, would
+# compile their code, which is not trim-safe)
 function notify_unregistered(@nospecialize(obs))::Bool
     obs isa Observable && isempty((obs::Observable).listeners) && return false
     return unregistered_listener()
@@ -294,10 +302,20 @@ end
 @generated function call_listener(obs, f, val, ::Type{Fs}) where {Fs<:Tuple}
     ex = :(unregistered_listener())
     for F in reverse(fieldtypes(Fs))
-        ex = :(f isa $F ? split_call(f::$F, val, cw_value_types($obs, $F)) : $ex)
+        g = F === SetindexCallback ? :(SetindexFrom(f::$F, cw_setindex_types($obs))) : :(f::$F)
+        ex = :(f isa $F ? split_call($g, val, cw_value_types($obs, $F)) : $ex)
     end
     return ex
 end
+
+# A SetindexCallback called by a notification of an observable of type O: an isa chain over the observables
+# of O's SetindexCallbacks only (`SetindexCallback` is one type for every target, and a value of O stored into
+# the target of another observable's copy would be a conversion that does not exist)
+struct SetindexFrom{Ts<:Tuple}
+    sc::SetindexCallback
+end
+SetindexFrom(sc::SetindexCallback, ::Type{Ts}) where {Ts<:Tuple} = SetindexFrom{Ts}(sc)
+(s::SetindexFrom{Ts})(x) where {Ts} = call_setindex(s.sc, x, Ts)
 
 function setindex_closed!(observable::Observable, val)
     if observable.ignore_equal_values
@@ -360,7 +378,7 @@ end
 @generated function call_setindex(sc::SetindexCallback, x, ::Type{Ts}) where {Ts<:Tuple}
     ex = :(unregistered_listener())
     for O in reverse(fieldtypes(Ts))
-        ex = :(sc.obs isa $O ? setindex_closed!(sc.obs::$O, x) : $ex)
+        ex = :(sc.obs isa $O ? (setindex_closed!(sc.obs::$O, x); x) : $ex)   # (`x`, as Observables' `sc.obs[] = x`)
     end
     return ex
 end

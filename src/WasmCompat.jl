@@ -116,7 +116,8 @@ Record, for the overlays of `WasmCompatObservablesExt`, the types of the observa
 [`register_listener!`](@ref WasmCompat.Observables.register_listener!) and
 [`register_value!`](@ref WasmCompat.Observables.register_value!). Call it in the build script after
 the program has built its observables and before `WasmCodegen.compile`; calling it again replaces
-the record.
+the record of the roots; the declarations stay, until
+[`open_world!`](@ref WasmCompat.Observables.open_world!).
 
 A root is a module (its globals, and its submodules'), an observable, or any other object, whose
 fields, elements and values are searched to a small depth. From each observable found, its listeners
@@ -137,7 +138,8 @@ function close_world! end
     WasmCompat.Observables.register_listener!(obs, F::Type)
 
 Declare that the program adds a listener of type `F` to `obs` (an observable, or an observable type)
-at run time, for the next [`close_world!`](@ref WasmCompat.Observables.close_world!). For a `map`,
+at run time, for every later [`close_world!`](@ref WasmCompat.Observables.close_world!) (until
+[`open_world!`](@ref WasmCompat.Observables.open_world!)). For a `map`,
 `onany` or `copy` made at run time, whose listener's fields have types too, build one like it
 natively instead and pass it to `close_world!` as a root.
 """
@@ -147,7 +149,8 @@ function register_listener! end
     WasmCompat.Observables.register_value!(obs, V::Type)
 
 Declare that the program sets `obs` (an observable of abstract element type, or its type) to a value
-of type `V` at run time, for the next [`close_world!`](@ref WasmCompat.Observables.close_world!).
+of type `V` at run time, for every later [`close_world!`](@ref WasmCompat.Observables.close_world!) (until
+[`open_world!`](@ref WasmCompat.Observables.open_world!)).
 """
 function register_value! end
 

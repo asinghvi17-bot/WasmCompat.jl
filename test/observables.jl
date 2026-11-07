@@ -9,6 +9,12 @@ using Observables: MapCallback, OnAny, SetindexCallback
 
 const CW = WasmCompat.Observables
 
+# an AbstractObservable of another type than Observable (its listeners are its observable's)
+struct WrapObs <: AbstractObservable{Float64}
+    o::Observable{Float64}
+end
+Observables.observe(w::WrapObs) = w.o
+
 # a graph of every kind of listener; each listener logs its call in `log`
 function build_graph(log::Vector{Any})
     a = Observable(1.0); b = Observable(2)
@@ -115,6 +121,58 @@ end
         CW.open_world!()
         @test ObsExt.cw_listener_types(Observable{Float32}) == Tuple{}
         @test ObsExt.cw_observable_types() == Tuple{}
+    end
+
+    @testset "declarations stay until open_world!" begin
+        CW.open_world!()
+        f = v -> nothing
+        CW.register_listener!(Observable(0.0), typeof(f))
+        CW.register_value!(Observable{Any}, Int16)
+        CW.close_world!()
+        @test typeof(f) in fieldtypes(ObsExt.cw_listener_types(Observable{Float64}))
+        CW.close_world!(Observable(1))                                        # again, another root: they stay
+        @test typeof(f) in fieldtypes(ObsExt.cw_listener_types(Observable{Float64}))
+        @test Int16 in fieldtypes(ObsExt.cw_value_types(Observable{Any}, Nothing))
+        CW.open_world!(); CW.close_world!()
+        @test ObsExt.cw_listener_types(Observable{Float64}) == Tuple{}
+        @test ObsExt.cw_value_types(Observable{Any}, Nothing) == Tuple{}
+    end
+
+    @testset "SetindexCallback returns its value, as natively" begin
+        src = Observable(1.5); dst = copy(src)
+        sc = only(last.(src.listeners))::SetindexCallback
+        CW.close_world!(src)
+        @test sc(2.5) === 2.5                                                 # native
+        @test ObsExt.call_setindex(sc, 3.5, ObsExt.cw_setindex_types()) === 3.5 && dst[] == 3.5
+        # (from a notification: the observables of the source type's SetindexCallbacks only)
+        anysrc = Observable{Any}(1); copy(anysrc)
+        CW.close_world!(src, anysrc)
+        @test ObsExt.cw_setindex_types(Observable{Float64}) == Tuple{Observable{Float64}}
+        @test ObsExt.cw_setindex_types(Observable{Any}) == Tuple{Observable{Any}}
+        @test Set(fieldtypes(ObsExt.cw_setindex_types())) == Set([Observable{Float64}, Observable{Any}])
+        @test ObsExt.SetindexFrom(sc, ObsExt.cw_setindex_types(Observable{Float64}))(4.5) === 4.5 && dst[] == 4.5
+        # (the value is the listener's result: a Consume stops the notification, as natively)
+        csrc = Observable{Any}(Consume(false)); copy(csrc)
+        after = Any[]; on(v -> push!(after, v), csrc)
+        csrc2 = Observable{Any}(Consume(false)); copy(csrc2)
+        after2 = Any[]; on(v -> push!(after2, v), csrc2)
+        CW.close_world!(csrc)
+        @test ObsExt.setindex_closed!(csrc, Consume(true)) == true == (csrc2[] = Consume(true); notify(csrc2))
+        @test after == after2 == Any[]
+        CW.open_world!()
+    end
+
+    @testset "notify of an observable of a type not in the closed world" begin
+        CW.open_world!(); CW.close_world!()
+        @test ObsExt.notify_closed(Observable(0x01)) == false                # an Observable without listeners
+        w = WrapObs(Observable(1.0))
+        @test notify(w) == false                                              # natively
+        @test_throws ErrorException ObsExt.notify_closed(w)                   # another AbstractObservable type
+        hits = Float64[]
+        on(v -> push!(hits, v), w)
+        CW.close_world!(w)                                                    # recorded: dispatched
+        @test ObsExt.notify_closed(w) == false && hits == [1.0]
+        CW.open_world!()
     end
 
     @testset "native Observables untouched" begin

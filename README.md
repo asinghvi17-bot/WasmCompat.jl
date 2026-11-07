@@ -85,7 +85,8 @@ observable.)
   a module (its globals and its submodules'), an observable, or any object whose fields, elements and
   values are searched to a small depth. From each observable found, its listeners are searched in turn (a
   closure's captured observables, a `map`'s result) and its inputs (a `map!`'s arguments). `exclude`:
-  listener types (or `UnionAll`s) the program never calls in Wasm. Calling it again replaces the record.
+  listener types (or `UnionAll`s) the program never calls in Wasm. Calling it again replaces the record of the
+  roots; the declarations below stay (they describe the program, not one graph), until `open_world!`.
 - **Types the program only makes at run time** are declared before `close_world!`:
   `WasmCompat.Observables.register_listener!(obs, F)` for a listener of type `F` added in Wasm (`on(dbl, obs)`;
   for a closure, `typeof` of one made natively), `WasmCompat.Observables.register_value!(obs, V)` for a value of
@@ -231,6 +232,9 @@ arrays. A few overlays are closed-world forms of `LibGit2`'s own code (the objec
 - **Observables, one world:** listeners are called directly, without `invokelatest` (a trimmed program has
   one world). `async_latest` and `throttle` (tasks, timers) and `ObservablePair`/`flatten` (fields of abstract
   type) are not covered.
+- **Observables, weak listeners:** `on(f, obs; weak = true)` detaches `f` when its `ObserverFunction` is
+  garbage-collected, through a finalizer. Finalizers do not run in a WebAssembly module, so in Wasm a weak
+  listener stays until `off` is called.
 
 - **SIMD.jl:** a horizontal float reduction (`sum`, `prod` of a `Vec`) adds the lanes left to
   right, where LLVM may associate in any order, so its last bits can differ. `muladd` is computed as
