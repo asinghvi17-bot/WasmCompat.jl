@@ -1,0 +1,4 @@
+35c35
+< p3: an undeclared listener: added
+---
+> p3: an undeclared listener: ErrorException

@@ -40,11 +40,13 @@ jobs:
           - { check: logging, pcre2: '0', libgit2: '0' }
           - { check: artifacts, pcre2: '0', libgit2: '0' }
           - { check: simd, pcre2: '0', libgit2: '0' }
+          - { check: observables, pcre2: '0', libgit2: '0', verify: error }
           - { check: git, pcre2: '1', libgit2: '1' }
     env:
       JULIA_PROJECT: test
       PCRE2: ${{ matrix.pcre2 }}
       LIBGIT2: ${{ matrix.libgit2 }}
+      VERIFY: ${{ matrix.verify || 'warn' }}
     steps:
       - uses: actions/checkout@v4
       - uses: julia-actions/setup-julia@v2
@@ -86,7 +88,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        check: [corpus, regex, tar, toml, logging, artifacts, git, simd]
+        check: [corpus, regex, tar, toml, logging, artifacts, git, simd, observables]
         runtime: [node, bun]
         include:
           - { check: git, libgit2: '1' }

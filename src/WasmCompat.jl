@@ -18,10 +18,11 @@ own only when WasmCodegen compiles a program; native code is unchanged.
 | `WasmCompatLibGit2Ext` | LibGit2_wasm_jll, LibGit2 | `LibGit2` on libgit2 compiled to Wasm ([`libgit2_config`](@ref)) |
 | `WasmCompatSIMDExt` | SIMD | SIMD.jl's LLVM intrinsics as the same operation on each lane |
 | `WasmCompatBaseExt` | (WasmCodegen alone) | `Base.generating_output()` is `false` |
+| `WasmCompatObservablesExt` | Observables | listeners called through `isa` chains over a closed world ([`WasmCompat.Observables`](@ref)) |
 
 Functions here that are part of the extensions' interface with programs and builds:
-[`showerror_hook`](@ref), [`pcre2_config`](@ref), [`pcre2_module`](@ref), [`libgit2_config`](@ref) and
-[`libgit2_module`](@ref).
+[`showerror_hook`](@ref), [`pcre2_config`](@ref), [`pcre2_module`](@ref), [`libgit2_config`](@ref),
+[`libgit2_module`](@ref) and the module [`WasmCompat.Observables`](@ref).
 
 An overlay replaces the native method only where inference does not evaluate the call at compile
 time: WasmCodegen's inference still evaluates calls with constant arguments using the native
@@ -86,5 +87,78 @@ function libgit2_config end
 The path of the libgit2 module a program compiled with [`libgit2_config`](@ref) imports as `"libgit2"`.
 """
 function libgit2_module end
+
+"""
+    WasmCompat.Observables
+
+The closed world of `WasmCompatObservablesExt` (loaded with WasmCodegen and Observables). In Wasm,
+Observables calls its listeners through `isa` chains over the types they have in the build
+process, which the build script records with [`close_world!`](@ref WasmCompat.Observables.close_world!)
+after building the program's observables and before compiling. Natively nothing changes: the
+record is only read by the extension's overlays.
+
+- [`close_world!`](@ref WasmCompat.Observables.close_world!)`(roots...; exclude = ())`: record the
+  types of the observables reachable from `roots`, their listeners and values; the extension's
+  overlays dispatch over them in Wasm.
+- [`register_listener!`](@ref WasmCompat.Observables.register_listener!)`(obs, F)` and
+  [`register_value!`](@ref WasmCompat.Observables.register_value!)`(obs, V)`: types the program
+  only makes at run time (a listener added in Wasm, a value of an `Observable{Any}`), for the next
+  `close_world!`.
+- [`open_world!`](@ref WasmCompat.Observables.open_world!)`()`: forget the record and the declarations.
+"""
+module Observables
+
+"""
+    WasmCompat.Observables.close_world!(roots...; exclude = ()) -> Nothing
+
+Record, for the overlays of `WasmCompatObservablesExt`, the types of the observables reachable from
+`roots`, of their listeners and of their values, and the types declared with
+[`register_listener!`](@ref WasmCompat.Observables.register_listener!) and
+[`register_value!`](@ref WasmCompat.Observables.register_value!). Call it in the build script after
+the program has built its observables and before `WasmCodegen.compile`; calling it again replaces
+the record.
+
+A root is a module (its globals, and its submodules'), an observable, or any other object, whose
+fields, elements and values are searched to a small depth. From each observable found, its listeners
+are searched too (a closure's captured observables, a `map`'s result). `exclude`: listener types (or
+`UnionAll`s) to leave out, for listeners the program never calls in Wasm.
+
+In Wasm, after this call:
+- a listener whose type was not recorded for its observable's type throws an `ErrorException` when
+  it is added (`on`) or called; so does a value of a type not recorded for an observable whose
+  element type is abstract (`Observable{Any}`), when its listeners are called;
+- listeners are called directly, without `invokelatest` (a trimmed program has one world).
+
+Natively nothing changes: Observables' own methods run, with every listener and value.
+"""
+function close_world! end
+
+"""
+    WasmCompat.Observables.register_listener!(obs, F::Type)
+
+Declare that the program adds a listener of type `F` to `obs` (an observable, or an observable type)
+at run time, for the next [`close_world!`](@ref WasmCompat.Observables.close_world!). For a `map`,
+`onany` or `copy` made at run time, whose listener's fields have types too, build one like it
+natively instead and pass it to `close_world!` as a root.
+"""
+function register_listener! end
+
+"""
+    WasmCompat.Observables.register_value!(obs, V::Type)
+
+Declare that the program sets `obs` (an observable of abstract element type, or its type) to a value
+of type `V` at run time, for the next [`close_world!`](@ref WasmCompat.Observables.close_world!).
+"""
+function register_value! end
+
+"""
+    WasmCompat.Observables.open_world!() -> Nothing
+
+Forget the record of [`close_world!`](@ref WasmCompat.Observables.close_world!) and the declarations:
+in Wasm, a notification then calls no listener (and throws if there is one).
+"""
+function open_world! end
+
+end # module Observables
 
 end # module

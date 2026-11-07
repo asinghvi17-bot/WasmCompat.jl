@@ -8,8 +8,9 @@ because it relies on dynamic dispatch that a trimmed program cannot compile, or 
 something a Wasm module does not have, such as GMP or a regex engine. WasmCompat replaces that code,
 only when WasmCodegen compiles a program, with code that is.
 
-**WasmCompat has no API you call.** Load it in the build script, next to the standard libraries the
-program uses, and compile as usual:
+**WasmCompat has no API you call**, but for opt-in configurations (*Regex*, *Git*) and the closed world of
+Observables (*Observables*). Load it in the build script, next to the standard libraries the program uses, and
+compile as usual:
 
 ```julia
 using WasmCodegen, WasmCompat
@@ -37,6 +38,7 @@ standard library's own methods.
 | `WasmCompatPCRE2Ext` | PCRE2_wasm_jll | Base's `Regex` on PCRE2 itself, compiled to WebAssembly: see *Regex* below. Opt-in, through `WasmCompat.pcre2_config`. | Needs WasmCodegen's `Config(foreign_functions)` and `Config(import_libraries)` |
 | `WasmCompatLibGit2Ext` | LibGit2_wasm_jll, LibGit2 | Julia's `LibGit2` on libgit2 itself, compiled to WebAssembly: see *Git* below. Opt-in, through `WasmCompat.libgit2_config`. | Needs WasmCodegen's `Config(foreign_functions)` and `Config(import_libraries)`; libgit2's WASI changes are proposed upstream |
 | `WasmCompatSIMDExt` | SIMD | SIMD.jl's intrinsics (each a `Base.llvmcall` of LLVM IR, which WasmCodegen does not compile) as the same operation on each lane, so code written with `SIMD.Vec` compiles as it is. Lane by lane: scalar speed, no SIMD128 (see *Differences*). | A SIMD128 lowering in WasmCodegen would replace the lanes for 16-byte vectors |
+| `WasmCompatObservablesExt` | Observables (0.5.5) | Observables' notifications (`obs[] = v`, `notify`, `map`, `on`, `off`, ...) without `invokelatest` or dynamic calls: listeners are called through `isa` chains over the types of a closed world, which the build script records with `WasmCompat.Observables.close_world!` (see *Observables* below). | An issue to be filed at JuliaGizmos/Observables.jl (typed `MapCallback`/`OnAny`/`SetindexCallback` fields and a dispatch hook in `notify` would make most of this unnecessary) |
 | `WasmCompatBaseExt` | WasmCodegen alone | `Base.generating_output()` is `false`: a compiled program never writes a code cache. Every first call of a `Base.OncePerProcess` value reached it (through `__precompile__(false)`) and trapped. | Or `jl_generating_output` → 0 in WasmCodegen itself |
 
 The Tar and ArgTools overlays are the libraries' own definitions with `::Function` arguments made type
@@ -58,6 +60,55 @@ Base.Experimental.@overlay WasmCodegen.Runtime.WASM_METHODS function WasmCompat.
     return false
 end
 ```
+
+## Observables
+
+Observables.jl keeps an observable's listeners as `Vector{Pair{Int,Any}}` and calls each with
+`invokelatest`; `MapCallback`, `OnAny` and `SetindexCallback` hold their function, arguments and result in
+fields of abstract type. Every `obs[] = v` is therefore a dynamic call, which a trimmed program cannot
+compile. With `WasmCompatObservablesExt`, the registered, unmodified Observables runs in Wasm on a *closed
+world*: the types of the program's observables, of their listeners and of the values of its observables of
+abstract element type, recorded natively by the build script after the program has built its observables:
+
+```julia
+using WasmCodegen, WasmCompat, Observables
+include("program.jl")                          # builds the program's observables
+WasmCompat.Observables.close_world!(Program)   # the observables reachable from Program's globals
+WasmCodegen.compile([WasmCodegen.Entry(Program.main, (); name = "main")];
+                    config = WasmCodegen.Config(host = :wasi, trim = :safe, shell_first_mutables = true))
+```
+
+(`shell_first_mutables`: an observable graph has cycles, observable → listener → `map` result → its inputs →
+observable.)
+
+- **`WasmCompat.Observables.close_world!(roots...; exclude = ())`** records the types reachable from `roots`:
+  a module (its globals and its submodules'), an observable, or any object whose fields, elements and
+  values are searched to a small depth. From each observable found, its listeners are searched in turn (a
+  closure's captured observables, a `map`'s result) and its inputs (a `map!`'s arguments). `exclude`:
+  listener types (or `UnionAll`s) the program never calls in Wasm. Calling it again replaces the record.
+- **Types the program only makes at run time** are declared before `close_world!`:
+  `WasmCompat.Observables.register_listener!(obs, F)` for a listener of type `F` added in Wasm (`on(dbl, obs)`;
+  for a closure, `typeof` of one made natively), `WasmCompat.Observables.register_value!(obs, V)` for a value of
+  type `V` an observable of abstract element type gets in Wasm (`obs` may be an observable or its type). A
+  `map`, `onany` or `copy` made at run time has a listener with fields: build one like it natively and pass it
+  as a root (`close_world!(Program, map(sin, Observable(0.0)))`).
+- `WasmCompat.Observables.open_world!()` forgets the record and the declarations.
+
+How it works: the record is a few methods of the extension that return `Tuple` types
+(`cw_listener_types(::Type{Observable{Float64}}) = Tuple{MapCallback, var"#5#6"}`, ...), defined by
+`close_world!`; the code that dispatches over them is fixed (`@generated` `isa` chains): nothing is generated
+per program. Every notification goes through one entry point of argument type `Any`, which dispatches on the
+observable's type, so that inference sees the `notify → listener → setindex! → notify` recursion as a cycle
+of one signature: notification stays synchronous and depth-first, in Observables' order. The record's methods
+are constant, but they are not overlays: they are the same natively and in Wasm, so inference evaluating them
+with the native methods (see *Requirements and known limits*) gets the module's answer.
+
+The overlaid signatures are Observables 0.5.5's own: `setindex!(::Observable, val)`,
+`notify(::AbstractObservable)`, the calls of `MapCallback`, `OnAny` and `SetindexCallback`,
+`on(f, ::AbstractObservable)`, the three methods of `off` and `map(f, ::AbstractObservable, args...)`.
+**One owner per signature:** of two overlays of the same signature in `WASM_METHODS` (another package's, a
+program's), the one loaded last is used, without a warning; `WasmCompatObservablesExt` must be the only one
+for these.
 
 ## Regex
 
@@ -171,6 +222,16 @@ arrays. A few overlays are closed-world forms of `LibGit2`'s own code (the objec
   (`trim = :safe` reports "a tuple of abstract type Tuple{Any}"), although native trim does. Assert
   the type at the call (`exception = err::MyError`) or pass a value of a concrete type.
 
+- **Observables, a closed world** (in Wasm only; natively Observables runs as it is): a listener whose type
+  was not recorded for its observable's type throws an `ErrorException` when it is added (`on`) or called; so
+  does a value whose type was not recorded for an observable of abstract element type, when its listeners are
+  called. A value type is recorded for the listeners of the observables that had it at `close_world!`, or for
+  every listener of its observable type with `register_value!`. Observables' `addhandler_callbacks` and
+  `removehandler_callbacks` are called if of a type present at `close_world!`.
+- **Observables, one world:** listeners are called directly, without `invokelatest` (a trimmed program has
+  one world). `async_latest` and `throttle` (tasks, timers) and `ObservablePair`/`flatten` (fields of abstract
+  type) are not covered.
+
 - **SIMD.jl:** a horizontal float reduction (`sum`, `prod` of a `Vec`) adds the lanes left to
   right, where LLVM may associate in any order, so its last bits can differ. `muladd` is computed as
   WebAssembly computes it (core WebAssembly has no fused multiply-add); `fma` is exact as natively.
@@ -178,11 +239,14 @@ arrays. A few overlays are closed-world forms of `LibGit2`'s own code (the objec
 
 ## Requirements and known limits
 
-- **Julia 1.13** (tested with 1.13.2). Julia 1.12 loads the package, but its overlays are untested there.
+- **Julia 1.13** (tested with 1.13.2; the Observables extension with 1.13.3). Julia 1.12 loads the package, but its overlays are untested there.
 - **WasmCodegen with `WASM_METHODS`.** `WASM_METHODS` and `@wasm_method` are internal to WasmCodegen
   today. Asking the maintainer to make them a supported interface for packages is part of the
   `Config(import_libraries)` discussion upstream.
-- **`verify = :error` does not pass yet.** WasmCodegen's juliac-equivalent verifier infers the
+- **`juliac --trim` does not see overlays.** The methods of `WASM_METHODS` exist only for WasmCodegen's
+  inference: a program trimmed natively with `juliac --trim` runs the standard library's (and Observables')
+  own methods.
+- **`verify = :error` does not pass yet** (but for `observables.jl`, built with it). WasmCodegen's juliac-equivalent verifier infers the
   program with the native method tables, so it reports the standard library's original code as
   unresolved even though the module contains the overlay instead. Build with `verify = :warn`.
   A generic fix in WasmCodegen is under discussion. Code generation is unaffected: `trim = :safe`
@@ -227,8 +291,13 @@ filesystem (a browser's WASI shim must give both instances the same directory ob
   and random tables; the Wasm logger's records against `ConsoleLogger`'s; the regex-free version
   check against the regex; that every overlay is present; the PCRE2 configuration, module and version;
   and (`test/simd.jl`) each SIMD.jl lane overlay against SIMD.jl's own LLVM intrinsic, in floats and integers of
-  every width, including NaNs, overflow and masks.
-- `test/wasm/` (needs Node 24 or Bun 1.4): one small program per extension (`simd.jl`: SIMD.jl `Vec` code and a `OncePerProcess`), compiled with `trim = :safe` (and
+  every width, including NaNs, overflow and masks; and (`test/observables.jl`) the closed-world functions the
+  Observables overlays call against Observables' own methods on the same graph (the same listener calls, in
+  the same order), what is outside the closed world throwing, native Observables untouched after
+  `close_world!`, and each overlay's signature being a native one.
+- `test/wasm/` (needs Node 24 or Bun 1.4): one small program per extension (`simd.jl`: SIMD.jl `Vec` code and a `OncePerProcess`;
+  `observables.jl`: the Observables MWE, `map`/`map!`/`onany`, priorities and `Consume`, `ignore_equal_values`,
+  listeners added and removed at run time, `Observable{Any}`, and notification cycles, built with `VERIFY=error`), compiled with `trim = :safe` (and
   optimized by `wasm-opt -O3`) and run on `node:wasi` in Node or Bun (`WASM_RUNTIME=node|bun`, or both). `check.sh` diffs each program's output with native Julia's. With `PCRE2=1`, `regex.jl` (Base's
   Regex API, compile errors, PCRE-only constructs, Pkg's semver patterns on every `[compat]` range of the General
   registry, Tar's path checks) and `corpus.jl` (69 patterns through `eachmatch`, `keys` and `replace`) run on PCRE2.

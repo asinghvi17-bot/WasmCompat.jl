@@ -8,6 +8,7 @@ same program run natively.
     ... PCRE2=1 ./check.sh tar julia_io   # Tar's error messages use a regex (PCRE2); Tar.extract sets file modes (julia_io)
     ... PCRE2=1 ./check.sh regex       # Base's Regex API, compile errors, Pkg's semver patterns, Tar's path checks
     ... PCRE2=1 ./check.sh corpus      # 69 patterns, from ordinary to PCRE-only constructs, through eachmatch, keys, replace
+    ... VERIFY=error ./check.sh observables   # Observables' notifications over a closed world (Prog.prepare records it)
     ... WASM_RUNTIME="node bun" BUN=bun PCRE2=1 ./check.sh regex   # each runtime's run diffed with the native one
     ... NO_BUILD=1 WASM_RUNTIME=bun PCRE2=1 ./check.sh regex       # the module and native output of the previous run, in Bun
 
@@ -16,7 +17,8 @@ with `Config(foreign_functions)` and `Config(import_libraries)`.
 
 Expected differences: `toml.jl`'s last line (a long integer literal parses as a `BigInt` natively, an overflow error
 in Wasm; see the README's *Differences*); `regex.jl`'s `(?R)` line ("nested recursion at the same subject position"
-from PCRE2 without a JIT, "JIT stack limit reached" from native Julia's JIT; see the README's *Regex*); and `tar.jl`
+from PCRE2 without a JIT, "JIT stack limit reached" from native Julia's JIT; see the README's *Regex*); `observables.jl`'s
+line for a listener the closed world does not have (added natively, refused in Wasm; see the README's *Differences*); and `tar.jl`
 reads an undefined value at `Tar.list`, a code generation issue (see the README's *Requirements and known limits*).
 `expected/NAME.diff` is the expected `diff native wasm` of a program: `check.sh` exits 0 when each run is identical
 or differs by exactly that, else 1.

@@ -1,8 +1,10 @@
 # julia --project=env build.jl PROG.jl OUT.wasm   compile PROG.jl's `Prog.main` for WASI with WasmCodegen.
 # ENV: COMPAT=0 builds without WasmCompat loaded; TRIM (safe), VERIFY (warn), EXT (comma-separated host extensions);
 # PCRE2=1 builds with Base's Regex on PCRE2 (`WasmCompat.pcre2_config`), and copies the PCRE2 module next to OUT.wasm;
-# LIBGIT2=1 builds with LibGit2 on libgit2 (`WasmCompat.libgit2_config`), and copies the libgit2 module next to OUT.wasm
-using WasmCodegen, TOML, Logging, Tar, ArgTools, Artifacts, Dates
+# LIBGIT2=1 builds with LibGit2 on libgit2 (`WasmCompat.libgit2_config`), and copies the libgit2 module next to OUT.wasm.
+# A program may define `Prog.prepare()`, called natively after loading it and before compiling (observables.jl records
+# its closed world there), and `Prog.CONFIG`, keywords of `WasmCodegen.Config`.
+using WasmCodegen, TOML, Logging, Tar, ArgTools, Artifacts, Dates, Observables
 compat = get(ENV, "COMPAT", "1") == "1"
 pcre2 = get(ENV, "PCRE2", "0") == "1"
 pcre2 && @eval using PCRE2_wasm_jll
@@ -11,14 +13,16 @@ libgit2 && @eval using LibGit2, LibGit2_wasm_jll
 compat && @eval using WasmCompat
 if compat
     for e in (:WasmCompatCoreExt, :WasmCompatTOMLExt, :WasmCompatLoggingExt, :WasmCompatTarExt, :WasmCompatArgToolsExt, :WasmCompatArtifactsExt,
-              :WasmCompatPCRE2Ext, :WasmCompatLibGit2Ext, :WasmCompatBaseExt, :WasmCompatSIMDExt)
+              :WasmCompatPCRE2Ext, :WasmCompatLibGit2Ext, :WasmCompatBaseExt, :WasmCompatSIMDExt, :WasmCompatObservablesExt)
         println("extension ", e, ": ", Base.get_extension(WasmCompat, e) !== nothing)
     end
 end
 include(abspath(ARGS[1]))
+isdefined(Prog, :prepare) && Prog.prepare()
 trim = Symbol(get(ENV, "TRIM", "safe")); verify = Symbol(get(ENV, "VERIFY", "warn"))
 exts = Symbol[Symbol(x) for x in split(get(ENV, "EXT", ""), ',') if !isempty(x)]
-cfg = WasmCodegen.Config(; host = :wasi, host_extensions = exts, trim, verify, on_unsupported = trim === :safe ? :error : :trap)
+cfg = WasmCodegen.Config(; host = :wasi, host_extensions = exts, trim, verify, on_unsupported = trim === :safe ? :error : :trap,
+                         (isdefined(Prog, :CONFIG) ? Prog.CONFIG : (;))...)
 if pcre2
     cfg = WasmCompat.pcre2_config(cfg)
     cp(WasmCompat.pcre2_module(), joinpath(dirname(abspath(ARGS[2])), "libpcre2-8.wasm"); force = true)
