@@ -215,6 +215,7 @@ end
     end
 
     include("simd.jl")
+    include("base.jl")
 
     @testset "generated overlays are current" begin
         # (the generator writes for this Julia's Tar and ArgTools; compare when they are the ones generated)

@@ -40,6 +40,7 @@ jobs:
           - { check: logging, pcre2: '0', libgit2: '0' }
           - { check: artifacts, pcre2: '0', libgit2: '0' }
           - { check: simd, pcre2: '0', libgit2: '0' }
+          - { check: bswap, pcre2: '0', libgit2: '0' }
           - { check: git, pcre2: '1', libgit2: '1' }
     env:
       JULIA_PROJECT: test
@@ -86,7 +87,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        check: [corpus, regex, tar, toml, logging, artifacts, git, simd]
+        check: [corpus, regex, tar, toml, logging, artifacts, git, simd, bswap]
         runtime: [node, bun]
         include:
           - { check: git, libgit2: '1' }
