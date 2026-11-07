@@ -182,11 +182,11 @@ arrays. A few overlays are closed-world forms of `LibGit2`'s own code (the objec
 - **WasmCodegen with `WASM_METHODS`.** `WASM_METHODS` and `@wasm_method` are internal to WasmCodegen
   today. Asking the maintainer to make them a supported interface for packages is part of the
   `Config(import_libraries)` discussion upstream.
-- **`verify = :error` does not pass yet.** WasmCodegen's juliac-equivalent verifier infers the
-  program with the native method tables, so it reports the standard library's original code as
-  unresolved even though the module contains the overlay instead. Build with `verify = :warn`.
-  A generic fix in WasmCodegen is under discussion. Code generation is unaffected: `trim = :safe`
-  reports 0 diagnostics.
+- **`verify = :error` passes with the overlays**, with WasmCodegen from its PR #60 on (2026-11-06; "Trim
+  verification of overlaid methods with the module's own inference"). Before it, the juliac-equivalent verifier
+  inferred the program with the native method tables and reported the standard library's original code as unresolved
+  even though the module contains the overlay instead, so a build needed `verify = :warn`. For example,
+  `test/wasm/artifacts.jl` builds with `verify = :error`: 0 diagnostics, verifier clean.
 - **Overlays must not be constant.** WasmCodegen's inference still evaluates calls with constant
   arguments using the native methods (see `WasmCodegen.Runtime.@wasm_method`). Each overlay here
   therefore reads state or performs I/O. For example, the Logging extension reads its logger from a
