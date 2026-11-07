@@ -17,5 +17,5 @@ WasmCompat = "740f80e5-dc3a-45f1-9413-3050938ad54a"
 [sources]
 LibGit2_wasm_jll = {url = "https://github.com/pankgeorg/LibGit2_wasm_jll.jl", rev = "main"}
 PCRE2_wasm_jll = {url = "https://github.com/pankgeorg/PCRE2_wasm_jll.jl", rev = "standalone-module"}
-WasmCodegen = {url = "https://github.com/gbaraldi/WasmCodegen.jl", rev = "main"}
+WasmCodegen = {url = "https://github.com/gbaraldi/WasmCodegen.jl", rev = "316bbaf8ff10d40f1e684237763485ee82d53fb7"}
 WasmCompat = {path = ".."}

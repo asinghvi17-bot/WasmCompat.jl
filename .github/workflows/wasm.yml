@@ -36,7 +36,7 @@ jobs:
           - { check: regex, pcre2: '1', libgit2: '0' }
           # (tar: Tar.extract sets file modes, which need WasmCodegen's julia_io host extension)
           - { check: tar, pcre2: '1', libgit2: '0', ext: julia_io }
-          - { check: toml, pcre2: '0', libgit2: '0', allow_failure: true, reason: 'does not build with trim = :safe: WasmCompatTOMLExt.unsupported passes typeof(x) through error() varargs (WasmCodegen: a tuple of abstract type)' }
+          - { check: toml, pcre2: '0', libgit2: '0', allow_failure: true, reason: 'does not build, with verify = :error or :warn alike: it fails in code generation, before the verifier runs. With trim = :safe, WasmCompatTOMLExt.unsupported passes typeof(x) through error() varargs (WasmCodegen: a tuple of abstract type)' }
           - { check: logging, pcre2: '0', libgit2: '0' }
           - { check: artifacts, pcre2: '0', libgit2: '0' }
           - { check: simd, pcre2: '0', libgit2: '0' }
@@ -90,10 +90,10 @@ jobs:
         runtime: [node, bun]
         include:
           - { check: git, libgit2: '1' }
-          - { check: tar, runtime: node, allow_failure: true, reason: 'README, known limits: Tar.list reads an undefined value (IRStructurizer carries the header of Tar.iterate_headers'' irreducible loop as undefined through a nested loop); a code generation issue, the same on both runtimes' }
-          - { check: tar, runtime: bun, allow_failure: true, reason: 'README, known limits: Tar.list reads an undefined value (IRStructurizer carries the header of Tar.iterate_headers'' irreducible loop as undefined through a nested loop); a code generation issue, the same on both runtimes' }
-          - { check: logging, runtime: node, allow_failure: true, reason: 'traps (unreachable) after 22 identical lines, on both runtimes; and log locations print @WasmCompat/... (known on main)' }
-          - { check: logging, runtime: bun, allow_failure: true, reason: 'traps (unreachable) after 22 identical lines, on both runtimes; and log locations print @WasmCompat/... (known on main)' }
+          - { check: tar, runtime: node, allow_failure: true, reason: 'README, known limits: Tar.list reads an undefined value (IRStructurizer carries the header of Tar.iterate_headers'' irreducible loop as undefined through a nested loop); a code generation issue, the same on both runtimes. The module builds with verify = :error (verifier clean); only its run differs from native' }
+          - { check: tar, runtime: bun, allow_failure: true, reason: 'README, known limits: Tar.list reads an undefined value (IRStructurizer carries the header of Tar.iterate_headers'' irreducible loop as undefined through a nested loop); a code generation issue, the same on both runtimes. The module builds with verify = :error (verifier clean); only its run differs from native' }
+          - { check: logging, runtime: node, allow_failure: true, reason: 'builds with verify = :error (verifier clean), but traps (unreachable) after 22 identical lines, on both runtimes; and log locations print @WasmCompat/... (known on main)' }
+          - { check: logging, runtime: bun, allow_failure: true, reason: 'builds with verify = :error (verifier clean), but traps (unreachable) after 22 identical lines, on both runtimes; and log locations print @WasmCompat/... (known on main)' }
           - { check: toml, runtime: node, allow_failure: true, reason: 'its module does not build (see the build job)' }
           - { check: toml, runtime: bun, allow_failure: true, reason: 'its module does not build (see the build job)' }
     env:
