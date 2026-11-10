@@ -1,0 +1,8 @@
+1,3c1,3
+< unsupported: ArgumentError: `ispressed` is not defined for Int64, see `IsPressedInputType` for the supported types.
+< unsupported: ArgumentError: `ispressed` is not defined for String, see `IsPressedInputType` for the supported types.
+< unsupported: ArgumentError: `ispressed` is not defined for Float64, see `IsPressedInputType` for the supported types.
+---
+> unsupported: ArgumentError: `ispressed` can not evaluate a Array{Int64, 1} in a Wasm build: the element type is not one of `Makie._COLLECTION_ELTYPES`. Use a collection of buttons or operators of buttons of those types.
+> unsupported: ArgumentError: `ispressed` can not evaluate a Set{String} in a Wasm build: the element type is not one of `Makie._COLLECTION_ELTYPES`. Use a collection of buttons or operators of buttons of those types.
+> unsupported: ArgumentError: `ispressed` can not evaluate a Array{Float64, 1} in a Wasm build: the element type is not one of `Makie._COLLECTION_ELTYPES`. Use a collection of buttons or operators of buttons of those types.

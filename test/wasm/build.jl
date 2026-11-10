@@ -1,7 +1,10 @@
 # julia --project=env build.jl PROG.jl OUT.wasm   compile PROG.jl's `Prog.main` for WASI with WasmCodegen.
 # ENV: COMPAT=0 builds without WasmCompat loaded; TRIM (safe), VERIFY (warn), EXT (comma-separated host extensions);
 # PCRE2=1 builds with Base's Regex on PCRE2 (`WasmCompat.pcre2_config`), and copies the PCRE2 module next to OUT.wasm;
-# LIBGIT2=1 builds with LibGit2 on libgit2 (`WasmCompat.libgit2_config`), and copies the libgit2 module next to OUT.wasm.
+# LIBGIT2=1 builds with LibGit2 on libgit2 (`WasmCompat.libgit2_config`), and copies the libgit2 module next to OUT.wasm;
+# MAKIE=before|after loads Makie before or after WasmCompat (makie.jl). It needs a Makie with
+# `Makie._ispressed_collection_fallback`, an unreleased one: without Makie or that hook this exits 77 (`SKIP: <why>`),
+# which check.sh reports as a skip.
 # A program may define `Prog.prepare()`, called natively after loading it and before compiling (observables.jl records
 # its closed world there), and `Prog.CONFIG`, keywords of `WasmCodegen.Config`.
 using WasmCodegen, TOML, Logging, Tar, ArgTools, Artifacts, Dates, Observables
@@ -10,10 +13,29 @@ pcre2 = get(ENV, "PCRE2", "0") == "1"
 pcre2 && @eval using PCRE2_wasm_jll
 libgit2 = get(ENV, "LIBGIT2", "0") == "1"
 libgit2 && @eval using LibGit2, LibGit2_wasm_jll
-compat && @eval using WasmCompat
+makie = get(ENV, "MAKIE", "0")
+makie in ("0", "before", "after") || error("build.jl: MAKIE is 0, before or after")
+if makie != "0"
+    makie_error = try
+        makie == "before" && @eval using Makie
+        compat && @eval using WasmCompat
+        makie == "after" && @eval using Makie
+        isdefined(Main.Makie, :_ispressed_collection_fallback) ? nothing : "this Makie $(pkgversion(Main.Makie)) has no `_ispressed_collection_fallback` (the ispressed hook is unreleased)"
+    catch err
+        err isa ArgumentError || rethrow()   # (Makie is not in the project)
+        "Makie is not available: $(first(split(sprint(showerror, err), '\n')))"
+    end
+    if makie_error !== nothing
+        println("SKIP: ", makie_error)
+        exit(77)
+    end
+    println("Makie ", pkgversion(Main.Makie), " loaded ", makie, " WasmCompat")
+else
+    compat && @eval using WasmCompat
+end
 if compat
     for e in (:WasmCompatCoreExt, :WasmCompatTOMLExt, :WasmCompatLoggingExt, :WasmCompatTarExt, :WasmCompatArgToolsExt, :WasmCompatArtifactsExt,
-              :WasmCompatPCRE2Ext, :WasmCompatLibGit2Ext, :WasmCompatBaseExt, :WasmCompatSIMDExt, :WasmCompatObservablesExt)
+              :WasmCompatPCRE2Ext, :WasmCompatLibGit2Ext, :WasmCompatBaseExt, :WasmCompatSIMDExt, :WasmCompatObservablesExt, :WasmCompatMakieExt)
         println("extension ", e, ": ", Base.get_extension(WasmCompat, e) !== nothing)
     end
 end
