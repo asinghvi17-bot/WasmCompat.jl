@@ -3,12 +3,11 @@
 # `ArgumentError` is the one thrown); the message is printed here, from the exception that Node runs. The other
 # arguments are `Any`, as an attribute is, and throw Makie's own error in both. `expected/makie_unsupported.diff`:
 # the three collections' lines.
-# NOTE: Makie's own `throw` in `_ispressed` interpolates `typeof(x)`, which inference gives as an abstract
-# `Type{<:BooleanOperator}` there, and WasmCodegen does not compile a tuple of that type. It is compiled when an exception is
-# inspected, as `refused` does, so this program does not build with Makie 0.25.0 at 388db7b2 of
-# asinghvi17-bot/Makie.jl (trim/ispressed-typed): `COMPILE FAILED ... a tuple of abstract type
-# Tuple{String, Type{<:Makie.BooleanOperator}, String}`. It builds, with the same results, when that `throw` takes
-# `Base.inferencebarrier(typeof(x))::DataType` (see the README).
+# NOTE: this needs asinghvi17-bot/Makie.jl at 4185104f or later (branch trim/ispressed-typed), which has the upstream fix for the `throw`
+# in `_ispressed`: it interpolated `typeof(x)`, which inference gives as an abstract `Type{<:BooleanOperator}`, and WasmCodegen
+# does not compile a tuple of that type once an exception is inspected, as `refused` does (at 388db7b2:
+# `COMPILE FAILED ... a tuple of abstract type Tuple{String, Type{<:Makie.BooleanOperator}, String}`). 4185104f makes it a concrete type.
+# Build it with VERIFY=error (check.sh does by default).
 # Same requirements and MAKIE=before|after as makie.jl.
 module Prog
 using Makie

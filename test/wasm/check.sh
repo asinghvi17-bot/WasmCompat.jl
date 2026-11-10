@@ -16,8 +16,10 @@ O=${OUT:-$D/out}/$n; W=$O/work; mkdir -p $O
 # (LIBGIT2: an empty home for both runs, so that the user's git configuration is not read natively; Julia keeps the
 # depot of the real home)
 if [ "${LIBGIT2:-0}" = 1 ]; then export JULIA_DEPOT_PATH=${JULIA_DEPOT_PATH:-$HOME/.julia:}; export HOME=$O/home; fi
-# (makie: MAKIE=before|after, the load order of Makie and WasmCompat; after by default)
-[ "$n" = makie ] && export MAKIE=${MAKIE:-after}
+# (makie, makie_unsupported: MAKIE=before|after, the load order of Makie and WasmCompat, after by default; and VERIFY=error by
+# default, so that a trim verifier regression fails the build instead of passing on the output comparison alone. VERIFY=warn
+# overrides. The other programs keep build.jl's default, `warn`)
+case $n in makie|makie_unsupported) export MAKIE=${MAKIE:-after} VERIFY=${VERIFY:-error} ;; esac
 if [ "${NO_BUILD:-0}" != 1 ]; then
   $JULIA --startup-file=no $D/build.jl $D/$n.jl $O/$n.wasm > $O/build.log 2>&1; rc=$?
   # (build.jl exits 77 for a program whose package or version is not there: skipped, with the reason)

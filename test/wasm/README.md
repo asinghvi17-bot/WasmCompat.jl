@@ -9,19 +9,25 @@ same program run natively.
     ... PCRE2=1 ./check.sh regex       # Base's Regex API, compile errors, Pkg's semver patterns, Tar's path checks
     ... PCRE2=1 ./check.sh corpus      # 69 patterns, from ordinary to PCRE-only constructs, through eachmatch, keys, replace
     ... VERIFY=error ./check.sh observables   # Observables' notifications over a closed world (Prog.prepare records it)
-    ... MAKIE=before ./check.sh makie   # Makie's ispressed (WasmCompatMakieExt); MAKIE=before|after: Makie loaded before or after WasmCompat
-    ... MAKIE=after ./check.sh makie_unsupported   # the ArgumentError for a collection the Wasm build can not iterate, printed in Node
+    ... MAKIE=before VERIFY=error ./check.sh makie   # Makie's ispressed (WasmCompatMakieExt); MAKIE=before|after: Makie loaded before or after WasmCompat
+    ... MAKIE=after VERIFY=error ./check.sh makie_unsupported   # the ArgumentError for a collection the Wasm build can not iterate, printed in Node
     ... WASM_RUNTIME="node bun" BUN=bun PCRE2=1 ./check.sh regex   # each runtime's run diffed with the native one
     ... NO_BUILD=1 WASM_RUNTIME=bun PCRE2=1 ./check.sh regex       # the module and native output of the previous run, in Bun
 
 `makie` and `makie_unsupported` need a Makie with `Makie._ispressed_collection_fallback` in the project, which is not
 released yet: `Pkg.develop` the `Makie/` and `ComputePipeline/` directories of asinghvi17-bot/Makie.jl at branch
-`trim/ispressed-typed` (388db7b2). Without Makie, or with a Makie that lacks the hook, `build.jl` exits 77 and `check.sh`
+`trim/ispressed-typed` (4185104f or later). Without Makie, or with a Makie that lacks the hook, `build.jl` exits 77 and `check.sh`
 prints `makie: SKIPPED, <why>` and exits 0 (test/makie.jl, the native test, skips the same). They are not in the CI matrix
-because test/Project.toml has no Makie. `makie_unsupported` does not build with 388db7b2: Makie's own `throw` in
-`_ispressed` (events.jl:320) interpolates `typeof(x)`, inferred as an abstract `Type{<:BooleanOperator}` there, which
-WasmCodegen refuses (`a tuple of abstract type`) as soon as a `catch` inspects the exception. It builds, and gives
-`expected/makie_unsupported.diff`, with `Base.inferencebarrier(typeof(x))::DataType` in that `throw`.
+because test/Project.toml has no Makie. Both build with `verify = :error`: `check.sh` sets `VERIFY=error` for these two
+unless `VERIFY` is given, so that a verifier regression fails the build rather than passing on the output comparison alone
+(the other programs keep `build.jl`'s `warn`). `makie_unsupported` needs 4185104f: before it (at 388db7b2) Makie's own
+`throw` in `_ispressed` interpolated `typeof(x)`, inferred as an abstract `Type{<:BooleanOperator}`, which WasmCodegen refuses
+(`a tuple of abstract type`) as soon as a `catch` inspects the exception. 4185104f has the upstream fix (a concrete type in that
+message, `Base.inferencebarrier(typeof(x))::DataType`), and gives `expected/makie_unsupported.diff`.
+
+The native test (test/makie.jl) also checks, against a Makie *without* the hook, that the extension loads in either order of
+`using` and defines no overlay: set `WASMCOMPAT_MAKIE_HOOKLESS` to a checkout of asinghvi17-bot/Makie.jl at a commit before the hook (for
+example 1c6d51c65, the parent of the hook's first commit on `trim/ispressed-typed`); without it that part is skipped, with a message.
 
 `PCRE2=1` needs PCRE2_wasm_jll in the project (with its standalone module, 10.46.0+1 or later) and WasmCodegen
 with `Config(foreign_functions)` and `Config(import_libraries)`.

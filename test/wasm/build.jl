@@ -1,5 +1,5 @@
 # julia --project=env build.jl PROG.jl OUT.wasm   compile PROG.jl's `Prog.main` for WASI with WasmCodegen.
-# ENV: COMPAT=0 builds without WasmCompat loaded; TRIM (safe), VERIFY (warn), EXT (comma-separated host extensions);
+# ENV: COMPAT=0 builds without WasmCompat loaded; TRIM (safe), VERIFY (warn here; check.sh makes it error for makie and makie_unsupported), EXT (comma-separated host extensions);
 # PCRE2=1 builds with Base's Regex on PCRE2 (`WasmCompat.pcre2_config`), and copies the PCRE2 module next to OUT.wasm;
 # LIBGIT2=1 builds with LibGit2 on libgit2 (`WasmCompat.libgit2_config`), and copies the libgit2 module next to OUT.wasm;
 # MAKIE=before|after loads Makie before or after WasmCompat (makie.jl). It needs a Makie with
@@ -55,7 +55,7 @@ if libgit2
 end
 # (tests run on optimized modules only: wasm-opt -O3, WasmCodegen's default)
 cfg.optimize === nothing && error("build.jl: Config(optimize = nothing): the checks run on modules optimized by wasm-opt only")
-println("optimize: wasm-opt ", join(cfg.optimize.exec, ' '))
+println("verify: ", cfg.verify, ", optimize: wasm-opt ", join(cfg.optimize.exec, ' '))
 t = time()
 c = try
     WasmCodegen.compile([WasmCodegen.Entry(Prog.main, (); name = "main")]; config = cfg)
