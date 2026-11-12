@@ -44,6 +44,21 @@ function main()
     vstore(y, c, 1, Vec{4,Bool}((true, false, true, false)))
     out("stores = $(join(c, ", "))\n")
     out("masked load = $(show_vec(vload(Vec{4,Float64}, a, 5, Vec{4,Bool}((false, true, true, false)))))\n")
+    # vectors of 16 bytes of floats (and Vec{2,Float32}): WasmCodegen's SIMD128 operations, v128 instructions
+    p = Vec{2,Float64}((1.5, -2.25)); q = Vec{2,Float64}((0.5, 4.0))
+    out("f64x2 = $(show_vec(p + q)) $(show_vec(p - q)) $(show_vec(p * q)) $(show_vec(p / q)) $(show_vec(-p)) $(show_vec(abs(p)))\n")
+    out("f64x2 sqrt, muladd = $(show_vec(sqrt(q))) $(show_vec(muladd(p, q, p)))\n")
+    r = Vec{4,Float32}((1.5f0, -2.0f0, 0.25f0, 9.0f0)); t = Vec{4,Float32}((2.0f0, 0.5f0, -4.0f0, 3.0f0))
+    out("f32x4 = $(show_vec(r + t)) $(show_vec(r * t)) $(show_vec(r / t)) $(show_vec(sqrt(abs(r)))) $(show_vec(muladd(r, t, r)))\n")
+    u = Vec{2,Float32}((3.0f0, -1.5f0))
+    out("f32x2 = $(show_vec(u + u)) $(show_vec(u * u)) $(show_vec(-u))\n")
+    d = collect(0.5:0.5:4.0)
+    s2 = Vec{2,Float64}(0.0)
+    @inbounds for k in 1:2:length(d)
+        s2 = muladd(vload(Vec{2,Float64}, d, k), Vec{2,Float64}(2.0), s2)
+    end
+    vstore(s2, d, 1)
+    out("f64x2 vload/vstore = $(show_vec(s2)) $(d[1]) $(d[2])\n")
     out("OncePerProcess = $(ONCE())\n")
     return 0
 end

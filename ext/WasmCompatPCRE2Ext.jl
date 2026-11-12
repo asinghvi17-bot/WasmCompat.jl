@@ -391,8 +391,6 @@ function WasmCompat.pcre2_module()
 end
 
 function WasmCompat.pcre2_config(config::WasmCodegen.Config; check_version::Bool = true)
-    hasfield(WasmCodegen.Config, :import_libraries) && hasfield(WasmCodegen.Config, :foreign_functions) ||
-        error("WasmCompat: the PCRE2 backend needs WasmCodegen's Config(foreign_functions) and Config(import_libraries)")
     config.host === :wasi ||
         throw(ArgumentError("WasmCompat.pcre2_config: the PCRE2 module is a host import, for Config(host = :wasi)"))
     if check_version

@@ -7,7 +7,7 @@
 # which check.sh reports as a skip.
 # A program may define `Prog.prepare()`, called natively after loading it and before compiling (observables.jl records
 # its closed world there), and `Prog.CONFIG`, keywords of `WasmCodegen.Config`.
-using WasmCodegen, TOML, Logging, Tar, ArgTools, Artifacts, Dates, Observables
+using WasmCodegen, TOML, Logging, Tar, ArgTools, Artifacts, Dates, MsgPack, Observables
 compat = get(ENV, "COMPAT", "1") == "1"
 pcre2 = get(ENV, "PCRE2", "0") == "1"
 pcre2 && @eval using PCRE2_wasm_jll
@@ -34,7 +34,7 @@ else
     compat && @eval using WasmCompat
 end
 if compat
-    for e in (:WasmCompatCoreExt, :WasmCompatTOMLExt, :WasmCompatLoggingExt, :WasmCompatTarExt, :WasmCompatArgToolsExt, :WasmCompatArtifactsExt,
+    for e in (:WasmCompatCoreExt, :WasmCompatTOMLExt, :WasmCompatLoggingExt, :WasmCompatTarExt, :WasmCompatArgToolsExt, :WasmCompatArtifactsExt, :WasmCompatMsgPackExt,
               :WasmCompatPCRE2Ext, :WasmCompatLibGit2Ext, :WasmCompatBaseExt, :WasmCompatSIMDExt, :WasmCompatObservablesExt, :WasmCompatMakieExt)
         println("extension ", e, ": ", Base.get_extension(WasmCompat, e) !== nothing)
     end

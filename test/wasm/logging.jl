@@ -9,7 +9,7 @@ function main()
     try
         f(2)
     catch err
-        # (asserted: a caught `err` as it is is an `Any`, whose tuple WasmCodegen does not compile)
+        # (asserted: a caught `err` as it is is an `Any`, whose keyword pairs WasmCodegen does not compile)
         e = err::ErrorException
         @error "caught an error" exception = e
         @warn "caught, as a value" e
