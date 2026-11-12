@@ -3,6 +3,7 @@ ArgTools = "0dad84c5-d112-42e6-8d28-ef12dabb789f"
 Artifacts = "56f22d72-fd6d-98f1-02f0-08ddc0907c33"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
+MsgPack = "99f44e22-a591-53d1-9472-aa23ef4bd671"
 LibGit2 = "76f85450-5226-5b5a-8eaa-529ad045b433"
 LibGit2_wasm_jll = "af6da55f-a25c-5e7a-9586-6a6edd93f4c4"
 PCRE2_wasm_jll = "8ba14a24-31f9-58b7-aede-60c6b67cf7b6"
@@ -17,5 +18,5 @@ WasmCompat = "740f80e5-dc3a-45f1-9413-3050938ad54a"
 [sources]
 LibGit2_wasm_jll = {url = "https://github.com/pankgeorg/LibGit2_wasm_jll.jl", rev = "main"}
 PCRE2_wasm_jll = {url = "https://github.com/pankgeorg/PCRE2_wasm_jll.jl", rev = "standalone-module"}
-WasmCodegen = {url = "https://github.com/gbaraldi/WasmCodegen.jl", rev = "316bbaf8ff10d40f1e684237763485ee82d53fb7"}
+WasmCodegen = {url = "https://github.com/gbaraldi/WasmCodegen.jl", rev = "main"}
 WasmCompat = {path = ".."}

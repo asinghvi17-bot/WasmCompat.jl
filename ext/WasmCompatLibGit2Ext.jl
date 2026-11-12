@@ -844,8 +844,6 @@ function WasmCompat.libgit2_module()
 end
 
 function WasmCompat.libgit2_config(config::WasmCodegen.Config; check_version::Bool = true)
-    hasfield(WasmCodegen.Config, :import_libraries) && hasfield(WasmCodegen.Config, :foreign_functions) ||
-        error("WasmCompat: the LibGit2 backend needs WasmCodegen's Config(foreign_functions) and Config(import_libraries)")
     config.host === :wasi ||
         throw(ArgumentError("WasmCompat.libgit2_config: the libgit2 module is a host import, for Config(host = :wasi)"))
     if check_version

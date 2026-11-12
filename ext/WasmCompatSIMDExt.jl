@@ -25,8 +25,14 @@ Differences from native SIMD.jl, by design:
   the lanes left to right, where LLVM may associate in any order: the last bits can differ;
 - `fmuladd` is `muladd`, fused or not as WebAssembly computes it (core WebAssembly has no fused
   multiply-add), and `fma` is Julia's `fma`, exact as natively;
-- there is no SIMD128: each lane is a scalar operation. A loop over `Vec`s computes what it
-  computes natively, at scalar speed (for PureBLAS's kernels, 20-40× below native).
+- SIMD128 only for vectors of 16 bytes of floats (`Vec{2,Float64}`, `Vec{4,Float32}`) and for
+  `Vec{2,Float32}`: their `+`, `-`, `*`, `/`, negation, `abs`, `sqrt`, `muladd`, `vload` and
+  `vstore` are WasmCodegen's `SIMD128` operations, which compile to `v128` instructions
+  (`f64x2.add`, ...). `muladd` is unfused (`f64x2.mul` and `f64x2.add`) unless the program is
+  compiled with `Config(relaxed_simd = true)` (`relaxed_madd`, fused where the hardware has FMA).
+  Every other operation, and every other vector type, is a scalar operation per lane: it
+  computes what it computes natively, at scalar speed (for PureBLAS's kernels, 20-40× below
+  native).
 """
 module WasmCompatSIMDExt
 
@@ -255,6 +261,26 @@ end
         m |= U(x[i].value) << (i - 1)
     end
     return m
+end
+
+## SIMD128: the vectors WasmCodegen's `SIMD128` operations take compile to v128 instructions
+## (natively, and as `lane_<name>`, they are the same operations lane by lane)
+const S128 = WasmCodegen.SIMD128
+for V in (S128.F64x2, S128.F32x4, S128.F32x2)
+    T = eltype(V).parameters[1]
+    for (f, g) in ((:fadd, :add), (:fsub, :sub), (:fmul, :mul), (:fdiv, :div))
+        @eval @lane @inline SI.$f(x::$V, y::$V, ::F = nothing) where {F <: SI.FPFlags} = S128.$g(x, y)
+    end
+    @eval begin
+        @lane @inline SI.fneg(x::$V, ::F = nothing) where {F <: SI.FPFlags} = S128.neg(x)
+        @lane @inline SI.fabs(x::$V) = S128.abs(x)
+        @lane @inline SI.sqrt(x::$V) = S128.sqrt(x)
+        @lane @inline SI.fmuladd(a::$V, b::$V, c::$V) = S128.muladd(a, b, c)
+        @lane @inline SI.load(::Type{$V}, p::Ptr{$T}, ::Val{Al} = Val(false), ::Val{Te} = Val(false)) where {Al, Te} =
+            S128.vload($V, p)
+        @lane @inline SI.store(x::$V, p::Ptr{$T}, ::Val{Al} = Val(false), ::Val{Te} = Val(false)) where {Al, Te} =
+            (S128.vstore(x, p); nothing)
+    end
 end
 
 end # module

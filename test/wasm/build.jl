@@ -2,7 +2,7 @@
 # ENV: COMPAT=0 builds without WasmCompat loaded; TRIM (safe), VERIFY (error), EXT (comma-separated host extensions);
 # PCRE2=1 builds with Base's Regex on PCRE2 (`WasmCompat.pcre2_config`), and copies the PCRE2 module next to OUT.wasm;
 # LIBGIT2=1 builds with LibGit2 on libgit2 (`WasmCompat.libgit2_config`), and copies the libgit2 module next to OUT.wasm
-using WasmCodegen, TOML, Logging, Tar, ArgTools, Artifacts, Dates
+using WasmCodegen, TOML, Logging, Tar, ArgTools, Artifacts, Dates, MsgPack
 compat = get(ENV, "COMPAT", "1") == "1"
 pcre2 = get(ENV, "PCRE2", "0") == "1"
 pcre2 && @eval using PCRE2_wasm_jll
@@ -10,7 +10,7 @@ libgit2 = get(ENV, "LIBGIT2", "0") == "1"
 libgit2 && @eval using LibGit2, LibGit2_wasm_jll
 compat && @eval using WasmCompat
 if compat
-    for e in (:WasmCompatCoreExt, :WasmCompatTOMLExt, :WasmCompatLoggingExt, :WasmCompatTarExt, :WasmCompatArgToolsExt, :WasmCompatArtifactsExt,
+    for e in (:WasmCompatCoreExt, :WasmCompatTOMLExt, :WasmCompatLoggingExt, :WasmCompatTarExt, :WasmCompatArgToolsExt, :WasmCompatArtifactsExt, :WasmCompatMsgPackExt,
               :WasmCompatPCRE2Ext, :WasmCompatLibGit2Ext, :WasmCompatBaseExt, :WasmCompatSIMDExt)
         println("extension ", e, ": ", Base.get_extension(WasmCompat, e) !== nothing)
     end
