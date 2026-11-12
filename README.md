@@ -35,9 +35,10 @@ standard library's own methods.
 | `WasmCompatTarExt` | Tar | Callbacks (`predicate`, `callback`, `emit`) specialized on, so calling them is static. `check_version_field` without a regex. | JuliaIO/Tar.jl#206 (the same specializations) |
 | `WasmCompatArgToolsExt` | ArgTools | Callbacks specialized on. `arg_read`/`arg_write` of a path call `open` without a keyword splat. | JuliaIO/ArgTools.jl#46 |
 | `WasmCompatArtifactsExt` | Artifacts | `Overrides.toml` tables parsed in a loop, without a generator whose element type is the abstract `Pair{String}`. | |
+| `WasmCompatMsgPackExt` | MsgPack | `MsgPack.pack` of values in abstractly typed places (a `Dict{String,Any}` message): each value is told apart by `isa` over common types, then packed by MsgPack's own methods, so the bytes are identical. `invalid_pack`'s error names types, not values. Only packing. | JuliaIO/MsgPack.jl#76 (the error message); the dispatch on run-time types also fails `juliac --trim=safe` natively |
 | `WasmCompatPCRE2Ext` | PCRE2_wasm_jll | Base's `Regex` on PCRE2 itself, compiled to WebAssembly: see *Regex* below. Opt-in, through `WasmCompat.pcre2_config`. | Needs WasmCodegen's `Config(foreign_functions)` and `Config(import_libraries)` |
 | `WasmCompatLibGit2Ext` | LibGit2_wasm_jll, LibGit2 | Julia's `LibGit2` on libgit2 itself, compiled to WebAssembly: see *Git* below. Opt-in, through `WasmCompat.libgit2_config`. | Needs WasmCodegen's `Config(foreign_functions)` and `Config(import_libraries)`; libgit2's WASI changes are proposed upstream |
-| `WasmCompatSIMDExt` | SIMD | SIMD.jl's intrinsics (each a `Base.llvmcall` of LLVM IR, which WasmCodegen does not compile) as the same operation on each lane, so code written with `SIMD.Vec` compiles as it is. Lane by lane: scalar speed, no SIMD128 (see *Differences*). | A SIMD128 lowering in WasmCodegen would replace the lanes for 16-byte vectors |
+| `WasmCompatSIMDExt` | SIMD | SIMD.jl's intrinsics (each a `Base.llvmcall` of LLVM IR, which WasmCodegen does not compile) as the same operation on each lane, so code written with `SIMD.Vec` compiles as it is. The arithmetic, `sqrt`, `muladd`, `vload` and `vstore` of `Vec{2,Float64}`, `Vec{4,Float32}` and `Vec{2,Float32}` are WasmCodegen's `SIMD128` operations (`v128` instructions); the rest is lane by lane, at scalar speed (see *Differences*). | — |
 | `WasmCompatObservablesExt` | Observables (0.5.5) | Observables' notifications (`obs[] = v`, `notify`, `map`, `on`, `off`, ...) without `invokelatest` or dynamic calls: listeners are called through `isa` chains over the types of a closed world, which the build script records with `WasmCompat.Observables.close_world!` (see *Observables* below). | An issue to be filed at JuliaGizmos/Observables.jl (typed `MapCallback`/`OnAny`/`SetindexCallback` fields and a dispatch hook in `notify` would make most of this unnecessary) |
 | `WasmCompatBaseExt` | WasmCodegen alone | `Base.generating_output()` is `false`: a compiled program never writes a code cache. Every first call of a `Base.OncePerProcess` value reached it (through `__precompile__(false)`) and trapped. | Or `jl_generating_output` → 0 in WasmCodegen itself |
 
@@ -213,15 +214,22 @@ arrays. A few overlays are closed-world forms of `LibGit2`'s own code (the objec
   `WasmCompatTOMLExt.SCALAR_TYPES`, `TABLE_TYPES` or `ARRAY_TYPES` (the parser's own output and the
   common concrete containers), or one of `UUID`, `SHA1`, `VersionNumber`, `Nothing` or `Symbol`
   passed through the conversion function. Any other value is an error in Wasm.
+- **MsgPack:** inside an abstractly typed container (`Dict{String,Any}`, `Vector{Any}`, a field of
+  abstract type), a value must be of one of the types listed in `WasmCompatMsgPackExt.SCALAR_TYPES`,
+  `ARRAY_TYPES` or `MAP_TYPES` (MsgPack's scalars and the common concrete containers). Any other
+  value is an error in Wasm. A value whose type is concrete where it is packed is packed as natively,
+  whatever its type (structs with `msgpack_type` methods included). Only `pack` is covered. `unpack`
+  without a target type builds values whose types are known only at run time.
 - **Logging:** the logger is fixed. `with_logger` and `global_logger` are not consulted, the
   minimum level is `Info`, and `JULIA_DEBUG` is ignored. Exceptions are shown without backtraces.
   Values are shown if they are of a common type (strings, symbols, numbers, versions, UUIDs) or an
   exception; any other value, vectors included, is shown as `(a value of type T)`.
 - **Logging, a code-generator limit:** a log call whose key-value pairs include a value of a type
-  not known at compile time builds a tuple of abstract type in the caller. An example is a caught
-  `err` passed as it is: `@warn "..." exception = err`. WasmCodegen doesn't compile such a tuple
-  (`trim = :safe` reports "a tuple of abstract type Tuple{Any}"), although native trim does. Assert
-  the type at the call (`exception = err::MyError`) or pass a value of a concrete type.
+  not known at compile time, such as a caught `err` passed as it is (`@warn "..." exception = err`),
+  doesn't compile. The macro's keyword pairs, `Base.Pairs{Symbol}` of a
+  `NamedTuple{(:exception,), <:Tuple{Any}}`, are made by a call on a type known only at run time.
+  (The tuple itself compiles since gbaraldi/WasmCodegen.jl#89.) Assert the type at the call
+  (`exception = err::MyError`) or pass a value of a concrete type.
 
 - **Observables, a closed world** (in Wasm only; natively Observables runs as it is): a listener whose type
   was not recorded for its observable's type throws an `ErrorException` when it is added (`on`) or called; so
@@ -239,7 +247,10 @@ arrays. A few overlays are closed-world forms of `LibGit2`'s own code (the objec
 - **SIMD.jl:** a horizontal float reduction (`sum`, `prod` of a `Vec`) adds the lanes left to
   right, where LLVM may associate in any order, so its last bits can differ. `muladd` is computed as
   WebAssembly computes it (core WebAssembly has no fused multiply-add); `fma` is exact as natively.
-  Every lane is a scalar operation: a `Vec` loop computes what it computes natively, at scalar speed.
+  `Vec{2,Float64}`, `Vec{4,Float32}` and `Vec{2,Float32}` arithmetic, `sqrt`, `muladd`, `vload` and
+  `vstore` compile to SIMD128 (`v128`) instructions through WasmCodegen's `SIMD128`; their `muladd` is
+  unfused unless the program is compiled with `Config(relaxed_simd = true)`. Every other operation and
+  vector type is a scalar operation per lane: it computes what it computes natively, at scalar speed.
 
 ## Requirements and known limits
 
@@ -250,22 +261,14 @@ arrays. A few overlays are closed-world forms of `LibGit2`'s own code (the objec
 - **`juliac --trim` does not see overlays.** The methods of `WASM_METHODS` exist only for WasmCodegen's
   inference: a program trimmed natively with `juliac --trim` runs the standard library's (and Observables')
   own methods.
-- **`verify = :error` does not pass yet** (but for `observables.jl`, built with it). WasmCodegen's juliac-equivalent verifier infers the
-  program with the native method tables, so it reports the standard library's original code as
-  unresolved even though the module contains the overlay instead. Build with `verify = :warn`.
-  A generic fix in WasmCodegen is under discussion. Code generation is unaffected: `trim = :safe`
-  reports 0 diagnostics.
+- **`verify = :error` passes** for the programs of `test/wasm/` (each build's verifier report is
+  clean): WasmCodegen's juliac-equivalent verifier infers overlaid methods with the module's own
+  inference (gbaraldi/WasmCodegen.jl#60), so it no longer reports the standard library's original
+  code that the overlays replace.
 - **Overlays must not be constant.** WasmCodegen's inference still evaluates calls with constant
   arguments using the native methods (see `WasmCodegen.Runtime.@wasm_method`). Each overlay here
   therefore reads state or performs I/O. For example, the Logging extension reads its logger from a
   global rather than constructing it.
-- **`Tar.list` reads an undefined value at run time** (a null dereference, with no build diagnostic). `Tar.iterate_headers`,
-  which `Tar.list` runs, jumps into its `while` loop with `@goto` (an irreducible loop), and Base's `hasmethod` checks
-  of the callback are loops between that label and the use of the header. IRStructurizer, which WasmCodegen
-  structures functions with, takes such a nested loop for an entry of the irreducible one and carries the header
-  as undefined through it. This is a code-generation issue, not one of this package: with IRStructurizer fixed,
-  `tar.jl` is identical to native in Node and in Bun. `Tar.extract`, `read_tarball` and `tree_hash` do not use
-  `iterate_headers`.
 - **`Tar.extract` sets file modes**, so a program that extracts needs a host with file modes: WasmCodegen's
   `julia_io` host extension (`host_extensions = [:julia_io]`, `js/julia_io.mjs`'s path imports). Without it,
   `chmod` fails with ENOTSUP (WASI preview 1 has no modes) and `Tar.extract` throws an `IOError`.
@@ -300,6 +303,7 @@ filesystem (a browser's WASI shim must give both instances the same directory ob
   the same order), what is outside the closed world throwing, native Observables untouched after
   `close_world!`, and each overlay's signature being a native one.
 - `test/wasm/` (needs Node 24 or Bun 1.4): one small program per extension (`simd.jl`: SIMD.jl `Vec` code and a `OncePerProcess`;
+  `msgpack.jl`: `MsgPack.pack` of a `Dict{String,Any}` of mixed values;
   `observables.jl`: the Observables MWE, `map`/`map!`/`onany`, priorities and `Consume`, `ignore_equal_values`,
   listeners added and removed at run time, `Observable{Any}`, and notification cycles, built with `VERIFY=error`), compiled with `trim = :safe` (and
   optimized by `wasm-opt -O3`) and run on `node:wasi` in Node or Bun (`WASM_RUNTIME=node|bun`, or both). `check.sh` diffs each program's output with native Julia's. With `PCRE2=1`, `regex.jl` (Base's

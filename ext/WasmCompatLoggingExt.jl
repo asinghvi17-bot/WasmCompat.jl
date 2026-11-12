@@ -24,9 +24,10 @@ Differences from the native default logger, by design:
   another, vectors included, is shown as `(a value of type T)`. The methods of this module only
   run in Wasm (natively the logger is never current).
 - a log call whose key-value pairs include a value of a type not known at compile time (a
-  caught `err` without a type assertion) builds a tuple of abstract type, which WasmCodegen does
-  not compile (a limit of the code generator, not of this extension; native trim compiles it):
-  assert the type at the call (`exception = err::MyError`) or pass a value of a concrete type.
+  caught `err` without a type assertion) doesn't compile: its keyword pairs, `Base.Pairs{Symbol}`
+  of a `NamedTuple` with an abstract field type, are made by a call on a type known only at run
+  time (a limit of the code generator; native trim compiles it). Assert the type at the call
+  (`exception = err::MyError`) or pass a value of a concrete type.
 """
 module WasmCompatLoggingExt
 
@@ -237,28 +238,10 @@ function show_any(io::IO, @nospecialize(x))
 end
 
 # `showerror(io, e)` of an exception of a type not known at compile time: the program's
-# (`WasmCompat.showerror_hook`), then WasmCodegen's `Runtime.showerror_any` where the runtime has
-# it, else the common exceptions of Base whose message is text
-const RUNTIME_SHOWERROR = isdefined(WasmCodegen.Runtime, :showerror_any)
+# (`WasmCompat.showerror_hook`), then WasmCodegen's `Runtime.showerror_any`
 function showerror_any(io::IO, @nospecialize(e))
     WasmCompat.showerror_hook(io, e) && return nothing
-    @static if RUNTIME_SHOWERROR
-        WasmCodegen.Runtime.showerror_any(io, e)
-    else
-        if e isa ErrorException
-            print(io, message_text(e.msg))
-        elseif e isa ArgumentError
-            print(io, "ArgumentError: ", message_text(e.msg))
-        elseif e isa AssertionError
-            print(io, "AssertionError: ", message_text(e.msg))
-        elseif e isa SystemError
-            print(io, "SystemError: ", message_text(e.prefix), ": ", Libc.strerror(e.errnum))
-        elseif e isa Base.IOError
-            print(io, "IOError: ", message_text(e.msg))
-        else
-            print(io, "(an exception of type ", typeof(e), ")")
-        end
-    end
+    WasmCodegen.Runtime.showerror_any(io, e)
     return nothing
 end
 

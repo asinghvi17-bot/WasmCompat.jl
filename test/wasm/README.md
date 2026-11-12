@@ -1,6 +1,6 @@
 # Wasm checks
 
-One small program per extension (`toml.jl`, `logging.jl`, `tar.jl`, `artifacts.jl`), compiled by WasmCodegen with
+One small program per extension (`toml.jl`, `logging.jl`, `tar.jl`, `artifacts.jl`, `msgpack.jl`), compiled by WasmCodegen with
 `trim = :safe` and run on WASI (`run.mjs`, on `node:wasi` in Node or in Bun); `check.sh NAME` diffs its output with the
 same program run natively.
 
@@ -17,9 +17,8 @@ with `Config(foreign_functions)` and `Config(import_libraries)`.
 
 Expected differences: `toml.jl`'s last line (a long integer literal parses as a `BigInt` natively, an overflow error
 in Wasm; see the README's *Differences*); `regex.jl`'s `(?R)` line ("nested recursion at the same subject position"
-from PCRE2 without a JIT, "JIT stack limit reached" from native Julia's JIT; see the README's *Regex*); `observables.jl`'s
-line for a listener the closed world does not have (added natively, refused in Wasm; see the README's *Differences*); and `tar.jl`
-reads an undefined value at `Tar.list`, a code generation issue (see the README's *Requirements and known limits*).
+from PCRE2 without a JIT, "JIT stack limit reached" from native Julia's JIT; see the README's *Regex*); and `observables.jl`'s
+line for a listener the closed world does not have (added natively, refused in Wasm; see the README's *Differences*).
 `expected/NAME.diff` is the expected `diff native wasm` of a program: `check.sh` exits 0 when each run is identical
 or differs by exactly that, else 1.
 

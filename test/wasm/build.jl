@@ -4,7 +4,7 @@
 # LIBGIT2=1 builds with LibGit2 on libgit2 (`WasmCompat.libgit2_config`), and copies the libgit2 module next to OUT.wasm.
 # A program may define `Prog.prepare()`, called natively after loading it and before compiling (observables.jl records
 # its closed world there), and `Prog.CONFIG`, keywords of `WasmCodegen.Config`.
-using WasmCodegen, TOML, Logging, Tar, ArgTools, Artifacts, Dates, Observables
+using WasmCodegen, TOML, Logging, Tar, ArgTools, Artifacts, Dates, MsgPack, Observables
 compat = get(ENV, "COMPAT", "1") == "1"
 pcre2 = get(ENV, "PCRE2", "0") == "1"
 pcre2 && @eval using PCRE2_wasm_jll
@@ -12,7 +12,7 @@ libgit2 = get(ENV, "LIBGIT2", "0") == "1"
 libgit2 && @eval using LibGit2, LibGit2_wasm_jll
 compat && @eval using WasmCompat
 if compat
-    for e in (:WasmCompatCoreExt, :WasmCompatTOMLExt, :WasmCompatLoggingExt, :WasmCompatTarExt, :WasmCompatArgToolsExt, :WasmCompatArtifactsExt,
+    for e in (:WasmCompatCoreExt, :WasmCompatTOMLExt, :WasmCompatLoggingExt, :WasmCompatTarExt, :WasmCompatArgToolsExt, :WasmCompatArtifactsExt, :WasmCompatMsgPackExt,
               :WasmCompatPCRE2Ext, :WasmCompatLibGit2Ext, :WasmCompatBaseExt, :WasmCompatSIMDExt, :WasmCompatObservablesExt)
         println("extension ", e, ": ", Base.get_extension(WasmCompat, e) !== nothing)
     end
